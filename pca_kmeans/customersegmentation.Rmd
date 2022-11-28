@@ -1,0 +1,330 @@
+---
+title: "customer_segmentation"
+author: "yohanesegipratama"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+options(scipen = 534)
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+
+# Pendahuluan {.tabset .tabset-fade .tabset-pills}
+## Customer Segmentation
+Segmentasi pasar merupakan pembagian kelompok konsumen yang memiliki kebutuhan, karateristik dan prilaku yang berbedabeda (heterogen) di dalam pasar tertentu sehingga menjadi satuan pasar yang homogen, dalam hal ini sangat membantu dalam
+proses pemasaran yang lebih terarah sehingga sumber daya perusahaan dapat digunakan secara efektif dan efisien contohnya
+memudahkan dalam membedakan pasar dan mengenal kompetitor dengan segmen yang sama.
+
+![](clustering.jpg)
+
+
+
+## Setup
+```{r eval=F}
+```
+
+Berikut beberapa packages yang digunakan pada artikel ini.
+```{r message=F}
+library(dplyr)
+library(tidyverse)
+library(corrplot)
+library(gridExtra)
+library(GGally)
+library(FactoMineR)
+
+# clustering libs
+library(dbscan)
+library(factoextra)
+library(cluster)
+# visualization libs
+library(ggplot2)
+library(ggthemes)
+```
+
+# Catatan
+Pada LBB ini kita akan buat beberapa model clustering, Kmeans,Kmedoids dan DBSCAN
+sumber data dari Kaggle
+
+```{r out.width="60%", fig.align='center', echo=FALSE}
+
+```
+
+# Load Data
+```{r}
+customer <- read.csv("data/Mall_Customers.csv", stringsAsFactors = T)
+glimpse(customer)
+```
+```{r}
+head(customer, 10)
+```
+```{r}
+str(customer)
+```
+
+# Preprocessing
+
+## mengecheck missing value
+```{r}
+cat("berapa missing value = ", sum(is.na(customer)), "data")
+```
+## menghapus kolom yang tidak digunakan (untuk modelling)
+```{r}
+
+customer_clean <- customer %>% 
+  select(-c(CustomerID, Gender))
+glimpse((customer_clean))
+
+```
+
+
+# EDA
+```{r}
+customer %>% 
+  group_by(Gender) %>% 
+  summarise(count = n()) %>% 
+  mutate(perc = count/sum(count)*100) %>% 
+  ggplot(aes(x = Gender,
+             y= perc,
+             fill = Gender)) +
+  geom_bar(stat = 'identity',
+           alpha = .5,
+           show.legend = F)+
+  geom_text(aes(label = paste0(perc, '%')),
+            size = 4,
+            vjust = -.5) +
+  labs(title = "Gender Distribution",
+       y = 'Percent')
+```
+```{r}
+table(customer$Gender)
+```
+
+
+* insight
+berdasarkan visualisasi diatas dapat diketahui proporsi pada kolom Gender ,ternyata Wanita mendominasi dibanding Pria yaitu 56% atau 112 dibading pria 44% atau 88 
+
+# PCA
+## menyiapkan data
+
+```{r}
+quanti <- customer %>%
+  select_if(is.numeric) %>%
+  colnames()
+```
+
+```{r}
+quantivar <- which(colnames(customer) %in% quanti)
+```
+```{r}
+quali <- customer %>% 
+  select_if(is.factor) %>% 
+  colnames()
+```
+```{r}
+qualivar <- customer %>%
+  select_if(is.factor) %>%
+  colnames()
+```
+```{r}
+qualivar <- which(colnames(customer) %in% quali)
+```
+```{r}
+customer_pca <- PCA(
+  X = customer, 
+  scale.unit = T, 
+  quali.sup = qualivar, 
+  ncp = 4, 
+  graph = F  
+  )
+
+customer_pca
+```
+
+```{r}
+customer_pca$eig
+```
+```{r}
+plot.PCA(
+  x = customer_pca,        #model dari pca
+  choix = "ind",    #jenis visualisasi yang akan ditampilkan
+  habillage = "Age",#pewarnaan observasi berdasarkan variable categorical
+  select = "contrib 5"#menghilangkan label variable categorical
+)
+```
+* insight
+dapat diketahui outlier antara lain 9,11, 199, 198 , 200
+
+
+```{r}
+plot.PCA(
+  x = customer_pca,
+  choix = "var"
+)
+```
+# Modelling
+
+# KMEANS
+
+
+```{r}
+
+fviz_nbclust(
+  x = customer_clean,
+  FUNcluster = kmeans,
+  method = "wss"
+)
+```
+* insight
+berdasarkan plot elbow method kita akan mengambil K sebanyak 5
+
+
+```{r}
+customer_matrix <- data.matrix(customer[c("Gender")])
+customer <- data.frame(customer, customer_matrix)
+customer_field<-c("Gender.1", "Age", "Annual.Income..k..", "Spending.Score..1.100.")
+customer
+```
+
+```{r}
+set.seed(100)
+segmentation <-kmeans(x=customer[c(customer_field)],centers=5,nstart=25)
+segmentation$centers
+```
+```{r}
+segmentation
+```
+
+```{r}
+ggplot(customer, aes(x = Annual.Income..k.. , y = Spending.Score..1.100.)) + 
+  geom_point(stat = "identity", aes(color = as.factor(segmentation$cluster))) +
+  scale_color_discrete(name=" ",
+                       breaks=c("1", "2", "3", "4", "5"),
+                       labels=c("Cluster 1", "Cluster 5", "Cluster 3", "Cluster 4", "Cluster 2")) +
+  ggtitle("Mall Customer Segmens", subtitle = "K-means Clustering")
+```
+
+# KMEDOIDS
+```{r}
+segmentation_pam <- pam(customer,5)
+segmentation_pam
+```
+
+```{r}
+segmentation_pam$medoids
+```
+
+```{r}
+fviz_cluster(
+  segmentation_pam,
+  data = customer,
+  choose.vars = NULL,
+  stand = TRUE,
+  axes = c(1, 2),
+  geom = c("point", "text"),
+  repel = FALSE,
+  show.clust.cent = TRUE,
+  ellipse = TRUE,
+  ellipse.type = "convex",
+  ellipse.level = 0.95,
+  ellipse.alpha = 0.2,
+  shape = NULL,
+  pointsize = 1.5,
+  labelsize = 12,
+  main = "Cluster plot",
+  xlab = NULL,
+  ylab = NULL,
+  outlier.color = "black",
+  outlier.shape = 19,
+  outlier.pointsize = pointsize,
+  outlier.labelsize = labelsize,
+  ggtheme = theme_grey()
+)
+```
+
+
+# DBSCAN
+
+```{r}
+library(dbscan)
+```
+
+```{r}
+segmentation_dbscan <- dbscan(customer_clean, eps = 3, minPts = 5)
+segmentation_dbscan
+```
+```{r}
+hullplot(customer_clean,segmentation_dbscan$cluster)
+```
+
+
+# Kesimpulan
+Pada Project ini membuat 3 model Clustering yaitu KMEANS, KMEDOIDS, DBSCAN menghasilkan segmentasi pelanggan yaitu:
+
+* Kmeans
+
+HASIL
+Kluster 1
+* Didominasi oleh perempuan, usia rata-rata adalah 43 tahun, pendapatan tahunan rata-rata 55.291  dan skor pengeluaran rata-rata adalah 49 dari 100.
+Kluster 2
+* Didominasi oleh perempuan, usia rata-rata adalah 32 tahun, pendapatan tahunan rata-rata $86, dan skor pengeluaran rata-rata adalah 82 dari 100.
+Kluster 3
+* Didominasi oleh laki-laki, usia rata-rata adalah 40 tahun, pendapatan tahunan rata-rata $88, dan skor pengeluaran rata-rata adalah 17 dari 100.
+Kluster 4
+* Didominasi oleh perempuan, usia rata-rata adalah 25 tahun, pendapatan tahunan rata-rata adalah $25, dan skor pengeluaran rata-rata adalah 78 dari 100.
+Kluster 5
+* Didominasi oleh perempuan, usia rata-rata adalah 45 tahun, pendapatan tahunan rata-rata $25, dan skor pengeluaran rata-rata adalah 20 dari 100.
+
+Model kmeans ini berhasil mengelompokan customer dengan sangat baik.
+
+* Kmedoids
+
+Algoritma k-medoids merupakan pendekatan clustering yang berhubungan dengan k-means clustering untuk mempartisi suatu kumpulan data menjadi k grup atau cluster. Dalam clustering k-medoids, setiap cluster diwakili oleh salah satu titik data dalam cluster. Titik-titik ini diberi nama cluster medoids.
+K-medoid adalah alternatif kuat untuk pengelompokan k-means. Artinya, algoritme kurang sensitif terhadap noise dan outlier, dibandingkan dengan k-means, karena menggunakan medoid sebagai pusat klaster alih-alih mean (digunakan dalam k-means).
+Metode clustering k-medoids yang paling umum adalah algoritma PAM (Partitioning Around Medoids, (Kaufman and Rousseeuw 1990)).
+
+Hasil
+diketahui 1 = pria 2 = wanita
+
+
+Kluster 1
+Didominasi oleh perempuan, usia 25 tahun, pendapatan tahunan $24  dan skor pengeluaran   73 dari 100.
+Kluster 2
+Didominasi oleh perempuan, usia 48 tahun, pendapatan tahunan  $36, dan skor pengeluaran  36 dari 100.
+Kluster 3
+Didominasi oleh laki-laki, usia 47 tahun, pendapatan tahunan  $60, dan skor pengeluaran  47 dari 100.
+Kluster 4
+Didominasi oleh perempuan, usia 29 tahun, pendapatan tahunan  $79, dan skor pengeluaran 83 dari 100.
+Kluster 5
+Didominasi oleh perempuan, usia 42 tahun, pendapatan tahunan  $86, dan skor pengeluaran  20 dari 100.
+
+
+
+* DBSCAN
+
+Algoritma Density-based Spatial Clustering of Application with Noise (DBSCAN) merupakan metode clustering yang berbasis kepadatan (density-based) dari posisi amatan data dengan prinsip mengelompokkan data yang relatif berdekatan. DBSCAN sering diterapkan pada data yang banyak mengandung noise, hal ini dikarenakan DBSCAN tidak akan memasukkan data yang dianggap noise kedalam cluster manapun
+
+HASIL
+berdasarkan model yang dibuat, gagal mengelompokan dikarenakan Based model algoritma ini adalah kepadatan tidak cocok untuk masalah bisnis ini.
+
+
+
+# sumber referensi
+Prakasawati, P. E., Chrisnanto, Y. H. and Hadiana, A. I. (2019) ‘Segmentasi Pelanggan Berdasarkan Produk Menggunakan Metode K- Medoids’, KOMIK (Konferensi Nasional Teknologi Informasi dan Komputer), 3(1), pp. 335–339. doi: 10.30865/komik.v3i1.1610.
+
+https://rpubs.com/Davidlimbong/dbscan
